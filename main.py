@@ -228,15 +228,17 @@ class PicoDepartureBoard:
         wlan.active(True)
         wlan.connect(ssid, password)
 
-        connection_attempt = 0
-        while connection_attempt < self.WIFI_MAXIMUM_CONNECTION_ATTEMPTS:
-            if connection_attempt > self.WIFI_MINIMUM_CONNECTION_ATTEMPTS and (
+        poll_count = 0
+        while poll_count < self.WIFI_MAXIMUM_CONNECTION_ATTEMPTS:
+            if poll_count > self.WIFI_MINIMUM_CONNECTION_ATTEMPTS and (
                 wlan.status() < 0 or wlan.status() >= 3
             ):
                 break
-            connection_attempt += 1
+            poll_count += 1
 
-            self._show_message("Connecting to", ssid, f"Attempt {connection_attempt}")
+            num_dots = (poll_count % 4)  # 0, 1, 2, 3
+            dots = ". " * num_dots
+            self._show_message("Connecting to", ssid, dots.strip())
             self.status_led.toggle()
 
             time.sleep(1)
@@ -244,7 +246,6 @@ class PicoDepartureBoard:
         if wlan.status() < 0:
             self._show_message(
                 "WiFi Error",
-                f"Attempt {connection_attempt}",
                 f"Status: {wlan.status()}",
             )
             raise Exception("Connection failed")
