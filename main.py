@@ -247,8 +247,16 @@ class PicoDepartureBoard:
             self._show_message(
                 "WiFi Error",
                 f"Status: {wlan.status()}",
+                "Setup mode in 10s",
             )
-            raise Exception("Connection failed")
+            # Wait ~10 seconds, but allow button combo to skip straight to setup
+            elapsed = 0
+            while elapsed < 10:
+                if self._both_buttons_held():
+                    break
+                time.sleep_ms(50)
+                elapsed += 0.05
+            self.start_setup_mode()
 
         self.sync_time()
 
