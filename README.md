@@ -1,33 +1,20 @@
-# Pico Departure Board
+# Pimoroni Galatic Unicorn Train Countdown Clock
+This project is a fork of [this excellent MicroPython project](https://github.com/oliciv/pico-departure-board) for displaying national rail train times.
 
-## Overview
+This version of the project displays them on a [Pimoroni Galatic Unicorn](https://shop.pimoroni.com/products/space-unicorns) LED matrix board - displaying the current time and the minutes until the next 3 trains.
 
-This is a departure board for a train station, running on a Raspberry Pi Pico W with a Waveshare 1.3inch OLED HAT. There are many bigger departure boards in the world, this was a fun challenge to fit on a tiny screen. It's not perfect, but it works!
+This is a much simplified version of the original project and it doesn't have many of the nice features of the original, but I only need something simple for my purposes!
 
-The goal was to create something that would be easy to build and use, with minimal setup/maintenance. About as close to "plug and play" as possible.
+I decided to build this as I found that I was always having to check my phone before leaving the house to see when the next train was (and if it was delayed). This clock removes that process!
 
-| ![Raspberry Pi Pico W with 1.3-inch OLED HAT in a 3D printed case, shown next to a 10p coin for scale](images/pico_case.jpg) | ![UK railway station departure board showing train times and platforms](images/real_board.jpg) |
-| :---: | :---: |
-| *The Pico and screen in a 3D printed case* | *A real live departure board at a station* |
+The project is a work-in-progress and I'll hopefully be adding a few more features but for now it:
+- Displays the number of minutes until the next 3 departures from a particular platform at a station
+- Each has a coloured background. Purple (to match the Elizabeth line) for when it's runnign to schedule, orange if the train is delayed, and red for if the train is less than 10 minutes away (time to run to the station!).
+- Manually dimmable brightness (will add auto-brightness in future update)
+- Updates every minute (this can be configured).
 
-## Hardware
+I'll update this readme shortly with further details but here are some relevant details from the readme of the original project (I'll need to minorly edit the deployment details as you'll need the Pimoroni Micropython distrobution). Once again thanks to the creator of the original project, Oli Allen!
 
-- Raspberry Pi Pico WH (with pre-soldered headers)
-- Waveshare 1.3inch OLED HAT (128x64, SPI)
-
-The OLED HAT connects directly to the top of the Pico WH. No soldering required.
-
-The screen has two buttons which are used for controls:
-
-- **"KEY0"**: Toggle the clock display on/off
-- **"KEY1"**: Scroll through later departures
-- **Both buttons held**: Enter setup mode
-
-### Case
-
-I'm using [this 3D printed case from Printables](https://www.printables.com/model/925664-case-for-picow-and-oled-13-combination/files) by JayFabra, which holds the Pico and OLED HAT perfectly with cutouts for the buttons and power cable.
-
-## Initial Setup
 
 
 ## Deploying to the Pico
@@ -59,18 +46,10 @@ Whichever method you choose, you'll need the following infromation:
 - Your WiFi credentials
 - Optional: A platform number to filter by
 
-#### Option A: WiFi
 
-On first boot, the board will start in setup mode automatically. You can also enter setup mode at any time by holding both buttons simultaneously.
+#### Edit JSON files manually
 
-1. Connect to the **PDBSetup-XXXX** WiFi network from your phone or laptop.
-2. A captive portal page should open automatically. If not, navigate to any non-HTTPS URL in your browser. (e.g http://pdb.setup)
-3. Fill in your WiFi credentials, API token, station code, and station name. (The name will be displayed when there are no departures to show)
-4. Press **Save**. The board will restart and connect to your WiFi.
-
-#### Option B: Edit JSON files manually
-
-If you prefer, you can edit the config files directly on the Pico's filesystem or before uploading the code.
+Edit the config files directly on the Pico's filesystem or before uploading the code.
 
 `wifi.json`:
 
@@ -93,9 +72,6 @@ If you prefer, you can edit the config files directly on the Pico's filesystem o
 }
 ```
 
-### 4. Enjoy
-
-The next time the board boots, you should see the boot screen, then a WiFi connection message, followed by live departures for your chosen station. If a config file is missing or invalid, an error message will be shown on the display.
 
 ## Constants
 
@@ -110,23 +86,6 @@ There are a few constants that control the behaviour of the departure board that
 - **API_TIMEOUT_SECONDS**: The timeout in seconds for each API request.
 - **ROTATE_SCREEN**: Whether to rotate the screen - in case you want to mount it upside down or with the power connector on the other side.
 - **TIME_SYNC_HOUR_UTC**: The hour in UTC when we sync the time with an NTP server and check if we have started/finished BST.
-
-## Implementation notes
-
-Train station names are difficult to display on such a small screen, so we need to truncate them. The longest one I've found is "Rhoose Cardiff International Airport"* (34 characters). The OLED screen is 128 pixels wide, and the font is 8 pixels wide, so we can fit 16 characters per line.
-
-Even so, font size 8 is quite large, so we can only fit 14 characters per line. To do: Investigate if we can use a smaller font for some items (e.g platform, status, etc)
-
-* It's NOT Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch, which is officially called "[Llanfairpwll](https://www.nationalrail.co.uk/stations/llanfairpwll/)".
-
-## Future ideas
-
-- It could be battery powered and portable or even wearable
-- Need to find a way to display calling stations
-- Limit to a specific platform, or destination(s)
-- It could still be smaller...
-- Better error handling!
-- Demo mode (No internet connection required, show an example departure board with times based on the current time)
 
 ## Author
 
