@@ -3,29 +3,37 @@ import network
 import ntptime
 import time
 import gc
-from oled_lib import OLED_1inch3
+import machine
 from machine import Pin, unique_id
 import urequests
 from machine import reset
-from setup_portal import SetupPortal
+
+from galactic import GalacticUnicorn
+from picographics import PicoGraphics, DISPLAY_GALACTIC_UNICORN as DISPLAY
+#from setup_portal import SetupPortal
 
 VERSION = "0.0.1"
 
+# overclock to 200Mhz
+#machine.freq(200000000)
+
+# create galactic object and graphics surface for drawing
+galactic = GalacticUnicorn()
+graphics = PicoGraphics(DISPLAY)
+
+brightness = 0.5
+
+MINS_TO_DEPARTURE_GO_RED_THRESHOLD = 10
 
 class PicoDepartureBoard:
 
     WIFI_MINIMUM_CONNECTION_ATTEMPTS = 0
     WIFI_MAXIMUM_CONNECTION_ATTEMPTS = 20
     DEPARTURE_REFRESH_SECONDS = 60
-    DELAY_PLATFORM_DISPLAY_MS = 10000
-    CALLING_AT_PAUSE_MS = 1000
-    CALLING_AT_SCROLL_MS = 100
     API_TIMEOUT_SECONDS = 10
-    ROTATE_SCREEN = False
     DARWIN_ENDPOINT = "https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb12.asmx"
-    SETUP_SSID = f"PDBSetup-{unique_id().hex()[-4:]}"
-    SETUP_PORT = 80
     FETCH_NUM_ROWS = 10
+    SELECTED_PLATFORM = 3 #Replace with selected platform at your own station
 
     # Sync time at 02:00 UTC daily (after 01:00 BST changeover and hopefully less
     # noticable/jarring in the middle of the night if time has drifted slightly
@@ -36,10 +44,6 @@ class PicoDepartureBoard:
         self.status_led = Pin("LED", Pin.OUT)
         self.status_led.value(True)
 
-        self.oled = OLED_1inch3(rotate=self.ROTATE_SCREEN)
-
-        self.oled.fill(self.oled.black)
-        self.oled.show()
 
         # Load API credentials
         api_creds = self._load_json_config(
@@ -58,42 +62,25 @@ class PicoDepartureBoard:
         self.platform = api_creds["platform"]
         self.show_splash_screens = api_creds["show_splash_screens"]
 
-        self.show_clock = True
 
-        self.buttons = {
-            "clock": Pin(15, Pin.IN, Pin.PULL_UP),
-            "scroll": Pin(17, Pin.IN, Pin.PULL_UP),
-        }
-
-        if self.api_token == "" or self.station_code == "" or self.station_name == "":
-            self.start_setup_mode()
 
     def _load_json_config(self, filename, required_keys):
         try:
             with open(filename, "r") as f:
                 data = json.load(f)
         except OSError:
-            self._show_message("Missing file", filename)
+            print("Missing file", filename)
             raise
         except ValueError:
-            self._show_message("Invalid JSON", filename)
+            print("Invalid JSON", filename)
             raise
 
         for key in required_keys:
             if key not in data:
-                self._show_message("Missing key", f"'{key}'", f"in {filename}")
                 raise KeyError(f"Missing '{key}' in {filename}")
 
         return data
 
-    def _show_message(self, line1, line2=None, line3=None):
-        self.oled.fill(self.oled.black)
-        self.oled.text(line1, 1, 10, self.oled.white)
-        if line2:
-            self.oled.text(line2, 1, 27, self.oled.white)
-        if line3:
-            self.oled.text(line3, 1, 44, self.oled.white)
-        self.oled.show()
 
     def _build_departures_request(self, num_rows=3):
         return (
@@ -189,35 +176,6 @@ class PicoDepartureBoard:
             yield xml[block_start:scan]
             pos = end + len(close_needle)
 
-    def show_boot_screen(self):
-        # Dimensions: 128 x 64, so 127, 63 are the max values
-
-        if not self.show_splash_screens:
-            return
-
-        self.oled.text("PDB", 5, 5, self.oled.white)
-        self.oled.text(VERSION, 128 - 5 - len(VERSION) * 8, 64 - 10, self.oled.white)
-
-        # top
-        self.oled.line(40, 22, 87, 22, self.oled.white)
-        # self.oled.line(40, 21, 87, 21, self.oled.white)
-        self.oled.line(75, 22, 60, 12, self.oled.white)
-
-        # connecting line
-        self.oled.line(75, 22, 55, 38, self.oled.white)
-
-        # bottom
-        self.oled.line(40, 38, 87, 38, self.oled.white)
-        # self.oled.line(40, 39, 87, 39, self.oled.white)
-        self.oled.line(55, 38, 70, 48, self.oled.white)
-
-        self.oled.show()
-
-        time.sleep(3)
-
-        self.oled.fill(self.oled.black)
-        self.oled.show()
-
     def connect_to_wifi(self):
         wifi_creds = self._load_json_config("wifi.json", ["ssid", "password"])
         ssid = wifi_creds["ssid"]
@@ -236,36 +194,21 @@ class PicoDepartureBoard:
                 break
             poll_count += 1
 
-            num_dots = (poll_count % 4)  # 0, 1, 2, 3
-            dots = ". " * num_dots
-            self._show_message("Connecting to", ssid, dots.strip())
+            print("Connecting to", ssid, f"Attempt {connection_attempt}")
             self.status_led.toggle()
 
             time.sleep(1)
 
         if wlan.status() < 0:
-            self._show_message(
-                "WiFi Error",
-                f"Status: {wlan.status()}",
-                "Setup mode in 10s",
-            )
-            # Wait ~10 seconds, but allow button combo to skip straight to setup
-            elapsed = 0
-            while elapsed < 10:
-                if self._both_buttons_held():
-                    break
-                time.sleep_ms(50)
-                elapsed += 0.05
-            self.start_setup_mode()
+            raise Exception("Connection failed")
 
         self.sync_time()
 
         if not self.show_splash_screens:
             return
 
-        self._show_message("Pico Departure", f"Board v{VERSION}", wlan.ifconfig()[0])
+        print("Pico Departure", f"Board v{VERSION}", wlan.ifconfig()[0])
         time.sleep(5)
-        self.oled.fill(self.oled.black)
 
     def fetch_departures(self):
         print("Fetching departures from National Rail API")
@@ -283,7 +226,6 @@ class PicoDepartureBoard:
                 raise Exception(f"API error: {response.status_code}")
         except Exception as e:
             print(f"API error: {e}")
-            self._show_message("API Error", "Status", str(e))
             time.sleep(5)
             return None
 
@@ -357,28 +299,6 @@ class PicoDepartureBoard:
             break  # only first subsequentCallingPoints list
         return points
 
-    def _truncate_destination(self, dest, max_chars):
-        # remove vowels and spaces from everything except the last char
-        # (e.g. "London Waterloo" -> "Lndn Wtrlo" makes more sense than "Lndn Wtrl")
-        # Uppercase vowels are assumed significant, e.g. "Aberystwyth" we'd not want to
-        # end up with "brstwyth"
-        core, last = dest[:-1], dest[-1]
-        core = "".join(c for c in core if c not in "aeiou ")
-
-        # combine first
-        dest = core + last
-
-        # truncate while preserving last character if it's a vowel
-        if len(dest) > max_chars:
-            if last.lower() in "aeiou":
-                # keep last vowel, truncate core only
-                dest = dest[: max_chars - 1] + last
-            else:
-                # truncate normally
-                dest = dest[: max_chars - 1] + "."
-
-        return dest
-
     def _last_sunday_of_month(self, year, month):
         """
         Return day of month of the last Sunday in a given month
@@ -438,69 +358,35 @@ class PicoDepartureBoard:
 
     def _format_etd(self, etd, std):
         # API time can be "Delayed", "On Time", "Cancelled", "No report" or "HH:MM"
+        diff = 0
+        dep_h, dep_m = map(int, std.split(":"))
         if etd not in (std, "On Time") and all(":" in t for t in (etd, std)):
             # convert HH:MM to minutes to display minutes delayed
-            std_h, std_m = map(int, std.split(":"))
-            etd_h, etd_m = map(int, etd.split(":"))
+            dep_h, dep_m = map(int, etd.split(":"))
 
-            std_total = std_h * 60 + std_m
-            etd_total = etd_h * 60 + etd_m
+        dep_total = dep_h * 60 + dep_m
+        t = time.localtime()
+        hour = t[3]
+        if self.is_bst:
+        # BST is UTC+1, so add 1 hour (and wrap around if necessary for midnight)
+            hour = (hour + 1) % 24
+        current_total = hour * 60 + t[4]
+        diff = dep_total - current_total
+        if diff < 0:
+            diff += 24 * 60
+        
+        return diff
 
-            diff = etd_total - std_total
-            # Handle midnight wraparound (e.g. scheduled 23:50, estimated 00:05)
-            if diff < 0:
-                diff += 24 * 60
-            if diff == 0:
-                return "On time"
-            return f"+{diff} mins"
-        return etd
-
-    def render_welcome_screen(self):
-        self.oled.text("Welcome to", 1, 10, self.oled.white)
-        self.oled.text(
-            self._truncate_destination(self.station_name, 16),
-            1,
-            27,
-            self.oled.white,
-        )
-        self.oled.text(self._get_current_time(), 1, 44, self.oled.white)
-        self.oled.show()
-
-        # If we have no services, it's likely the middle of the night, a day of
-        # engineering works, a particularly quiet station - or some other situation
-        # where it's unlikely that a train will suddenly sneak up on us, so we can
-        # afford to sleep for 5 minutes and check again to see if the situation has
-        # changed. We still update the clock each minute on the minute so it doesn't
-        # look frozen.
-
-        # Initially, sleep until the next minute passes to keep the clock accurate
-        current_seconds = time.localtime()[5]
-        sleep_time = 60 - current_seconds
-
-        for _ in range(5):
-            # Poll for button presses during the sleep period
-            elapsed = 0
-            while elapsed < sleep_time:
-                if self._both_buttons_held():
-                    self.start_setup_mode()
-                time.sleep_ms(50)
-                elapsed += 0.05
-
-            sleep_time = 60  # from now on, sleep for 60 subsequent seconds
-            self.oled.fill_rect(1, 44, 128, 8, self.oled.black)
-            self.oled.text(self._get_current_time(), 1, 44, self.oled.white)
-            self.oled.show()
 
     def render_departures(self, services, offset=0, calling_at_text=None):
-        self.oled.fill(self.oled.black)
 
         if not services:
-            self.render_welcome_screen()
+            #Do something to make displays blank
             return
 
-        num_rows = 2 if self.show_clock else 3
-        row_spacing = 20 if self.show_clock else 21
-
+        num_rows = 10
+        selected_platform_mins = []
+        selected_platform_etd = []
         for current_row in range(num_rows):
             idx = offset + current_row
             if idx >= len(services):
@@ -508,8 +394,9 @@ class PicoDepartureBoard:
 
             service = services[idx]
             std = service.get("std", "??:??")  # scheduled time of departure
-
-            etd = self._format_etd(service.get("etd", ""), std)
+            
+            etd = service.get("etd", "")
+            mins = self._format_etd(service.get("etd", ""), std)
 
             platform = service.get("platform", "")
 
@@ -517,123 +404,62 @@ class PicoDepartureBoard:
             dest = ""
             if service.get("destination"):
                 dest = service["destination"][0].get("locationName", "")
-            # At 8px per char, 128px = 16 chars max
-            # Time takes 6 chars ("HH:MM" plus a space)
 
-            max_dest_chars = 16 - 6  # 10 chars for destination
-            if len(dest) > max_dest_chars:
-                dest = self._truncate_destination(dest, max_dest_chars)
+            line_text = f"Time: {mins} Etd: {etd} Dest: {dest} "
 
-            y = 2 + (current_row * row_spacing)
-            line_text = f"{std} {dest}"
-            self.oled.text(line_text, 1, y, self.oled.white)
-
-            # Second line: for top service, alternate between etd/platform
-            # and scrolling calling points
-            if current_row == 0 and calling_at_text is not None:
-                self.oled.text(calling_at_text[:16], 1, y + 10, self.oled.white)
+            platform_str = ""
+            if platform:
+                platform_str = f"Plat {platform}"
+            print(line_text + platform_str)
+            if platform == str(self.SELECTED_PLATFORM):
+                selected_platform_mins.append(mins)
+                selected_platform_etd.append(etd)
+        
+        #Display on LEDs
+        graphics.set_font("bitmap8")
+        graphics.set_pen(graphics.create_pen(0, 0, 0))
+        graphics.clear()
+        
+        led_text = ""
+        
+        current_width = -1
+        
+        # Put current time on screen:
+        current_time = self._get_current_time()
+        time_width = graphics.measure_text(current_time, 1)
+        max_total_width = galactic.WIDTH - time_width
+        
+        graphics.set_pen(graphics.create_pen(0, 0, 50))
+        graphics.rectangle(max_total_width + 1, 0, time_width, 11)
+        graphics.set_font("bitmap8")
+        
+        
+        
+        graphics.set_pen(graphics.create_pen(255, 255, 255))
+        
+        graphics.text(current_time, max_total_width + 1, 2, 60, 1)
+        
+        
+        for i, mins_val in enumerate(selected_platform_mins):
+            text_width = graphics.measure_text(str(mins_val), 1)
+            if (current_width + text_width) <= max_total_width:
+                if mins_val < 100: #Only display 2 digit depature mins
+                    if mins_val < MINS_TO_DEPARTURE_GO_RED_THRESHOLD:
+                        graphics.set_pen(graphics.create_pen(100, 0, 0))
+                    elif selected_platform_etd[i] is "On time":
+                        graphics.set_pen(graphics.create_pen(52, 40, 80))
+                    elif selected_platform_etd[i] is "Delayed":
+                        graphics.set_pen(graphics.create_pen(100, 10, 0))
+                    else:
+                        graphics.set_pen(graphics.create_pen(70, 35, 0))
+                    graphics.rectangle(current_width+1, 0, text_width -1, 11)
+                    
+                    graphics.set_pen(graphics.create_pen(255, 255, 255))
+                    graphics.text(str(mins_val), current_width + 1, 2, 60, 1)
+                    current_width += text_width + 1 # two column gap
             else:
-                if etd:
-                    self.oled.text(etd, 1, y + 10, self.oled.white)
+                current_width = max_total_width
 
-                if platform:
-                    platform_str = f"Plat {platform}"
-                    self.oled.text(
-                        platform_str,
-                        128 - len(platform_str) * 8,
-                        y + 10,
-                        self.oled.white,
-                    )
-
-        if self.show_clock:
-            # Separator line
-            self.oled.hline(0, 44, 128, self.oled.white)
-
-            # Centered clock at the bottom
-            current_time = self._get_current_time(include_seconds=True)
-            time_width = len(current_time) * 8
-            time_x = (128 - time_width) // 2
-            self.oled.text(current_time, time_x, 50, self.oled.white)
-
-        self.oled.show()
-
-    def update_calling_points(self, services, offset):
-        if not services or offset >= len(services):
-            # If there are no services to display, there can't be any calling points
-            self._current_top_service_id = None
-            self._calling_at_str = ""
-            return
-        service_id = services[offset].get("serviceID", "")
-        if service_id and service_id != self._current_top_service_id:
-            points = self.fetch_calling_points(service_id)
-            self._current_top_service_id = service_id
-            self._calling_at_str = "Calling at: " + ", ".join(points) if points else ""
-            if len(points) == 1:
-                self._calling_at_str = f"{self._calling_at_str} Only"
-            self._calling_at_phase = "info"
-            self._calling_at_scroll_offset = 0
-            self._calling_at_phase_start = time.ticks_ms()
-            print(f"Calling at: {self._calling_at_str}")
-
-    def advance_calling_at(self):
-        """
-        Advance the calling-at animation state. Returns True if
-        display needs updating.
-        """
-        if not self._calling_at_str:
-            return False
-
-        time_ms_now = time.ticks_ms()
-        elapsed = time.ticks_diff(time_ms_now, self._calling_at_phase_start)
-
-        if (
-            self._calling_at_phase == "info"
-            and elapsed >= self.DELAY_PLATFORM_DISPLAY_MS
-        ):
-            self._calling_at_phase = "scroll"
-            self._calling_at_scroll_offset = 0
-            self._calling_at_phase_start = time_ms_now
-            return True
-        elif self._calling_at_phase == "scroll" and elapsed >= (
-            self.CALLING_AT_PAUSE_MS
-            if self._calling_at_scroll_offset == 0
-            else self.CALLING_AT_SCROLL_MS
-        ):
-            self._calling_at_scroll_offset += 1
-            self._calling_at_phase_start = time_ms_now
-            # Once the text has scrolled off screen, switch back to delay/platform info
-            if self._calling_at_scroll_offset >= len(self._calling_at_str):
-                self._calling_at_phase = "info"
-                self._calling_at_scroll_offset = 0
-            return True
-
-        return False
-
-    def get_calling_at_text(self):
-        if not self._calling_at_str or self._calling_at_phase == "info":
-            return None
-        # Show a 16-char window scrolling left through the string
-        return self._calling_at_str[self._calling_at_scroll_offset :][:16]
-
-    def _both_buttons_held(self):
-        return (
-            self.buttons["clock"].value() == 0 and self.buttons["scroll"].value() == 0
-        )
-
-    def start_setup_mode(self):
-        self._show_message("Entering", "setup mode...")
-        gc.collect()
-        portal = SetupPortal(
-            ssid=self.SETUP_SSID,
-            port=self.SETUP_PORT,
-        )
-        self._show_message("Setup:Connect to", self.SETUP_SSID, "http://pdb.setup")
-        portal.start(
-            should_exit=lambda: any(pin.value() == 0 for pin in self.buttons.values())
-        )
-        self._show_message("Setup complete", "Restarting...")
-        time.sleep(3)
-        reset()
 
     def show_departure_board(self):
         print("Showing departure board")
@@ -642,18 +468,8 @@ class PicoDepartureBoard:
         offset = 0
         last_fetch = 0
 
-        # Calling points state
-        self._current_top_service_id = None
-        self._calling_at_str = ""
-        self._calling_at_phase = (
-            "info"  # "info" (delay/platform) or "scroll" (calling points)
-        )
-        self._calling_at_scroll_offset = 0
-        self._calling_at_phase_start = time.ticks_ms()
         last_render = time.ticks_ms()
 
-        # Default state is pulled up, so 1 = not pressed
-        prev_state = {name: 1 for name in self.buttons}
 
         while True:
             now = time.time()
@@ -677,52 +493,26 @@ class PicoDepartureBoard:
                     print("Failed to fetch data, retrying...")
 
                 last_fetch = now
-                self.update_calling_points(services, offset)
-                self.render_departures(services, offset, self.get_calling_at_text())
+                #self.update_calling_points(services, offset)
+                self.render_departures(services, offset)
+                
 
-            else:
-                needs_render = self.advance_calling_at()
+            # brightness up/down
+            if galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_UP):
+                galactic.adjust_brightness(0.01)
+            if galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_DOWN):
+                galactic.adjust_brightness(-0.01)
+            galactic.update(graphics)
 
-                # Re-render for clock seconds
-                time_ms_now = time.ticks_ms()
-                if (
-                    self.show_clock
-                    and time.ticks_diff(time_ms_now, last_render) >= 1000
-                ):
-                    needs_render = True
 
-                if needs_render:
-                    self.render_departures(services, offset, self.get_calling_at_text())
-                    last_render = time_ms_now
 
-            # Read all buttons and detect change in state (pressed)
-            pressed = {}
-            for name, pin in self.buttons.items():
-                cur = pin.value()
-                pressed[name] = cur == 0 and prev_state[name] == 1
-                prev_state[name] = cur
 
-            if pressed["clock"]:
-                self.show_clock = not self.show_clock
-                self.render_departures(services, offset, self.get_calling_at_text())
-
-            if pressed["scroll"]:
-                offset += 1
-                if offset >= len(services):
-                    offset = 0
-                self.update_calling_points(services, offset)
-                self.render_departures(services, offset, self.get_calling_at_text())
-
-            # Both buttons held simultaneously -> enter setup mode
-            if self._both_buttons_held():
-                self.start_setup_mode()
 
             # Sleep to prevent the CPU from constantly spinning in a tight loop
-            time.sleep_ms(50)
+            time.sleep_ms(10)
 
 
 if __name__ == "__main__":
     pdb = PicoDepartureBoard()
-    pdb.show_boot_screen()
     pdb.connect_to_wifi()
     pdb.show_departure_board()
