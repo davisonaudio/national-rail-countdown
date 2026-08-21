@@ -411,7 +411,7 @@ class PicoDepartureBoard:
             if platform:
                 platform_str = f"Plat {platform}"
             print(line_text + platform_str)
-            if platform == str(self.SELECTED_PLATFORM):
+            if platform == str(self.platform):
                 selected_platform_mins.append(mins)
                 selected_platform_etd.append(etd)
         

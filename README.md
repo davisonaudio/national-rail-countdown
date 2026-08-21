@@ -1,4 +1,6 @@
 # Pimoroni Galatic Unicorn Train Countdown Clock
+![Pimoroni Galactic Unicorn LED matrix board showing next 3 train departures and current time](images/galactic_unicorn_train_clock.jpg)
+
 This project is a fork of [this excellent MicroPython project](https://github.com/oliciv/pico-departure-board) for displaying national rail train times.
 
 This version of the project displays them on a [Pimoroni Galatic Unicorn](https://shop.pimoroni.com/products/space-unicorns) LED matrix board - displaying the current time and the minutes until the next 3 trains.
