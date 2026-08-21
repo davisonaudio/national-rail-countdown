@@ -28,7 +28,7 @@ MINS_TO_DEPARTURE_GO_RED_THRESHOLD = 10
 class PicoDepartureBoard:
 
     WIFI_MINIMUM_CONNECTION_ATTEMPTS = 0
-    WIFI_MAXIMUM_CONNECTION_ATTEMPTS = 60
+    WIFI_MAXIMUM_CONNECTION_ATTEMPTS = 20
     DEPARTURE_REFRESH_SECONDS = 60
     API_TIMEOUT_SECONDS = 10
     DARWIN_ENDPOINT = "https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb12.asmx"
@@ -186,13 +186,13 @@ class PicoDepartureBoard:
         wlan.active(True)
         wlan.connect(ssid, password)
 
-        connection_attempt = 0
-        while connection_attempt < self.WIFI_MAXIMUM_CONNECTION_ATTEMPTS:
-            if connection_attempt > self.WIFI_MINIMUM_CONNECTION_ATTEMPTS and (
+        poll_count = 0
+        while poll_count < self.WIFI_MAXIMUM_CONNECTION_ATTEMPTS:
+            if poll_count > self.WIFI_MINIMUM_CONNECTION_ATTEMPTS and (
                 wlan.status() < 0 or wlan.status() >= 3
             ):
                 break
-            connection_attempt += 1
+            poll_count += 1
 
             print("Connecting to", ssid, f"Attempt {connection_attempt}")
             self.status_led.toggle()
