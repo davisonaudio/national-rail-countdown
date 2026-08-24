@@ -21,19 +21,37 @@ VERSION = "0.0.1"
 galactic = GalacticUnicorn()
 graphics = PicoGraphics(DISPLAY)
 
-brightness = 0.5
+brightness_user_adjust = 0.0
 
 MINS_TO_DEPARTURE_GO_RED_THRESHOLD = 10
+
+prev_scaled = 0.0
+def scale_light_value(raw):
+    global prev_scaled
+    global brightness_user_adjust
+    # Constants from above
+    a = (0.55 - 0.05) / (550 - 19)
+    b = 0.05 - a * 19
+    filter_coeff = 0.98
+    
+    scaled = a * raw + b #round(a * raw + b, 2)
+    scaled = ((1.0 - filter_coeff) * scaled) + (filter_coeff * prev_scaled)
+    prev_scaled = scaled
+    
+    scaled += brightness_user_adjust
+    return max(0.05, min(.85, scaled))
+
 
 class PicoDepartureBoard:
 
     WIFI_MINIMUM_CONNECTION_ATTEMPTS = 0
-    WIFI_MAXIMUM_CONNECTION_ATTEMPTS = 20
-    DEPARTURE_REFRESH_SECONDS = 60
+    WIFI_MAXIMUM_CONNECTION_ATTEMPTS = 60
+    DEPARTURE_REFRESH_SECONDS = 30
     API_TIMEOUT_SECONDS = 10
     DARWIN_ENDPOINT = "https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb12.asmx"
     FETCH_NUM_ROWS = 10
     SELECTED_PLATFORM = 3 #Replace with selected platform at your own station
+    MINS_TO_DEPARTURE_GO_RED_THRESHOLD = 10
 
     # Sync time at 02:00 UTC daily (after 01:00 BST changeover and hopefully less
     # noticable/jarring in the middle of the night if time has drifted slightly
@@ -186,13 +204,13 @@ class PicoDepartureBoard:
         wlan.active(True)
         wlan.connect(ssid, password)
 
-        poll_count = 0
-        while poll_count < self.WIFI_MAXIMUM_CONNECTION_ATTEMPTS:
-            if poll_count > self.WIFI_MINIMUM_CONNECTION_ATTEMPTS and (
+        connection_attempt = 0
+        while connection_attempt < self.WIFI_MAXIMUM_CONNECTION_ATTEMPTS:
+            if connection_attempt > self.WIFI_MINIMUM_CONNECTION_ATTEMPTS and (
                 wlan.status() < 0 or wlan.status() >= 3
             ):
                 break
-            poll_count += 1
+            connection_attempt += 1
 
             print("Connecting to", ssid, f"Attempt {connection_attempt}")
             self.status_led.toggle()
@@ -411,7 +429,7 @@ class PicoDepartureBoard:
             if platform:
                 platform_str = f"Plat {platform}"
             print(line_text + platform_str)
-            if platform == str(self.platform):
+            if platform == str(self.SELECTED_PLATFORM):
                 selected_platform_mins.append(mins)
                 selected_platform_etd.append(etd)
         
@@ -444,24 +462,30 @@ class PicoDepartureBoard:
             text_width = graphics.measure_text(str(mins_val), 1)
             if (current_width + text_width) <= max_total_width:
                 if mins_val < 100: #Only display 2 digit depature mins
-                    if mins_val < MINS_TO_DEPARTURE_GO_RED_THRESHOLD:
+                    if selected_platform_etd[i] is "Cancelled":
                         graphics.set_pen(graphics.create_pen(100, 0, 0))
-                    elif selected_platform_etd[i] is "On time":
-                        graphics.set_pen(graphics.create_pen(52, 40, 80))
-                    elif selected_platform_etd[i] is "Delayed":
-                        graphics.set_pen(graphics.create_pen(100, 10, 0))
+                        graphics.rectangle(current_width, 0, 2, 11)
+                        current_width += 3
                     else:
-                        graphics.set_pen(graphics.create_pen(70, 35, 0))
-                    graphics.rectangle(current_width+1, 0, text_width -1, 11)
-                    
-                    graphics.set_pen(graphics.create_pen(255, 255, 255))
-                    graphics.text(str(mins_val), current_width + 1, 2, 60, 1)
-                    current_width += text_width + 1 # two column gap
+                        if mins_val < self.MINS_TO_DEPARTURE_GO_RED_THRESHOLD:
+                            graphics.set_pen(graphics.create_pen(100, 0, 0))
+                        elif selected_platform_etd[i] is "On time":
+                            graphics.set_pen(graphics.create_pen(52, 40, 80))
+                        elif selected_platform_etd[i] is "Delayed":
+                            graphics.set_pen(graphics.create_pen(100, 10, 0))
+                        else:
+                            graphics.set_pen(graphics.create_pen(60, 60, 0))
+                        graphics.rectangle(current_width+1, 0, text_width -1, 11)
+                        
+                        graphics.set_pen(graphics.create_pen(255, 255, 255))
+                        graphics.text(str(mins_val), current_width + 1, 2, 60, 1)
+                        current_width += text_width + 1 # two column gap
             else:
                 current_width = max_total_width
 
 
     def show_departure_board(self):
+        global brightness_user_adjust
         print("Showing departure board")
 
         services = []
@@ -496,12 +520,16 @@ class PicoDepartureBoard:
                 #self.update_calling_points(services, offset)
                 self.render_departures(services, offset)
                 
-
+            galactic.set_brightness(scale_light_value(galactic.light()))
             # brightness up/down
-            if galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_UP):
-                galactic.adjust_brightness(0.01)
-            if galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_DOWN):
-                galactic.adjust_brightness(-0.01)
+            if galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_UP) and galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_DOWN):
+                brightness_user_adjust = 0 # zero the adjustment
+            elif galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_UP):
+                brightness_user_adjust += 0.005
+            elif galactic.is_pressed(GalacticUnicorn.SWITCH_BRIGHTNESS_DOWN):
+                brightness_user_adjust -= 0.005
+            
+            
             galactic.update(graphics)
 
 
