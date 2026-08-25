@@ -12,8 +12,9 @@ I decided to build this as I found that I was always having to check my phone be
 The project is a work-in-progress and I'll hopefully be adding a few more features but for now it:
 - Displays the number of minutes until the next 3 departures from a particular platform at a station
 - Each has a coloured background. Purple (to match the Elizabeth line) for when it's running to schedule, yellow if the train is delayed, and red for if the train is less than 10 minutes away (time to run to the station!). Finally if a train is cancelled, this will show as a double red line.
-- Manually dimmable brightness (will add auto-brightness in future update)
 - Updates 30s (this can be configured).
+- Automatic brightness adjustment using the board's built in light sensor. The brightness can still be manually adjusted with the two increase/decrease brightness buttons, which apply an offset to the auto-brightness level. The offset can be zeroed by pressing both buttons at once.
+
 
 I'll update this readme shortly with further details but here are some relevant details from the readme of the original project (I'll need to minorly edit the deployment details as you'll need the Pimoroni Micropython distrobution). Once again thanks to the creator of the original project, Oli Allen!
 
