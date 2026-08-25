@@ -29,15 +29,18 @@ prev_scaled = 0.0
 def scale_light_value(raw):
     global prev_scaled
     global brightness_user_adjust
-    # Constants from above
+    # Calibration values
     a = (0.55 - 0.05) / (550 - 19)
     b = 0.05 - a * 19
     filter_coeff = 0.98
     
-    scaled = a * raw + b #round(a * raw + b, 2)
+    scaled = a * raw + b
+
+    #low-pass filter the brightness with 1st order IIR (prevents sudden changes or flickering)
     scaled = ((1.0 - filter_coeff) * scaled) + (filter_coeff * prev_scaled)
     prev_scaled = scaled
-    
+
+    #apply user's brightness offset (set with the buttons)
     scaled += brightness_user_adjust
     return max(0.05, min(.85, scaled))
 
